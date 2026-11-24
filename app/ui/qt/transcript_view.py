@@ -35,6 +35,7 @@ class TranscriptView(QTextEdit):
         self._timed_starts: list[float] = []   # sorted word start times
         self._timed_index: list[int] = []      # span index per entry above
         self._active_index = -1
+        self._follow = True  # keep the spoken word in view during playback
         self._active_color = QColor(120, 170, 255, 160)  # blue current-word
         self._low_color = QColor(255, 224, 138)          # amber low-confidence
 
@@ -63,9 +64,12 @@ class TranscriptView(QTextEdit):
         self._timed_starts = [self._spans[i].ts for i in timed]
 
     # ---- click-to-seek -------------------------------------------------
-    def mousePressEvent(self, event) -> None:
-        super().mousePressEvent(event)
-        if event.button() != Qt.LeftButton:
+    def mouseReleaseEvent(self, event) -> None:
+        # Decide on *release*, not press, and only when nothing is selected.
+        # That way click-and-drag to select text (to copy it) never gets
+        # hijacked into a seek — a plain click still jumps to the word.
+        super().mouseReleaseEvent(event)
+        if event.button() != Qt.LeftButton or self.textCursor().hasSelection():
             return
         pos = self.cursorForPosition(event.position().toPoint()).position()
         for span in self._spans:
@@ -74,6 +78,12 @@ class TranscriptView(QTextEdit):
                 return
 
     # ---- playback highlight --------------------------------------------
+    def set_follow(self, enabled: bool) -> None:
+        """Toggle whether the view scrolls to keep the spoken word visible."""
+        self._follow = enabled
+        if enabled and 0 <= self._active_index < len(self._spans):
+            self._auto_scroll(self._spans[self._active_index].cs)
+
     def highlight_at_time(self, seconds: float) -> None:
         idx = self._span_index_at_time(seconds)
         if idx == self._active_index:
@@ -106,10 +116,16 @@ class TranscriptView(QTextEdit):
         self.setExtraSelections(selections)
 
     def _auto_scroll(self, pos: int) -> None:
-        collapsed = self.textCursor()
-        collapsed.setPosition(pos)
-        rect = self.cursorRect(collapsed)
+        # Don't yank the view while the user is reading or has text selected,
+        # and never touch the real text cursor (setTextCursor would wipe the
+        # user's selection). Scroll the viewport directly instead.
+        if not self._follow or self.textCursor().hasSelection():
+            return
+        probe = self.textCursor()  # a detached copy; not applied to the widget
+        probe.setPosition(pos)
+        rect = self.cursorRect(probe)
         viewport = self.viewport().rect()
         if rect.top() < viewport.top() or rect.bottom() > viewport.bottom():
-            self.setTextCursor(collapsed)
-            self.ensureCursorVisible()
+            bar = self.verticalScrollBar()
+            target = bar.value() + rect.top() - (viewport.height() - rect.height()) // 2
+            bar.setValue(max(bar.minimum(), min(target, bar.maximum())))

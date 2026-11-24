@@ -18,6 +18,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -99,14 +100,19 @@ class TranscriptionStudio(QMainWindow):
         self._slider.setRange(0, self._duration_ms)
         self._slider.sliderMoved.connect(self._player.setPosition)
         self._time_label = QLabel(f"00:00 / {_fmt_time(self._duration_ms)}")
+        self._follow_chk = QCheckBox("Follow")
+        self._follow_chk.setChecked(True)
+        self._follow_chk.setToolTip("Scroll to keep the spoken word in view")
         bar.addWidget(self._play_btn)
         bar.addWidget(self._slider, 1)
         bar.addWidget(self._time_label)
+        bar.addWidget(self._follow_chk)
         layout.addLayout(bar)
 
         # transcript
         self._view = TranscriptView(self._document, parent=central)
         self._view.word_seek_requested.connect(self._seek_seconds)
+        self._follow_chk.toggled.connect(self._view.set_follow)
         layout.addWidget(self._view, 1)
 
         # status line
